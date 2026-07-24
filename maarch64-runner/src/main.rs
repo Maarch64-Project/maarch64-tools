@@ -21,7 +21,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("[+] Maarch64 Runner loading binary: {:?}", args.binary);
     let mut mem = MemoryManager::new();
 
-    let loaded = ElfLoader::load_file(&args.binary, &mut mem)?;
+    let mut target_args: Vec<&str> = vec![args.binary.to_str().unwrap_or("")];
+    for a in &args.args {
+        target_args.push(a.as_str());
+    }
+
+    let loaded = ElfLoader::load_file_with_args(&args.binary, &target_args, &mut mem)?;
     println!("[+] Loaded binary. Entry point: {:#x}", loaded.entry_point);
 
     let mut ctx = CpuContext::new();

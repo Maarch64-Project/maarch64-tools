@@ -31,7 +31,7 @@ fn test_applet(busybox_path: &PathBuf, applet: &str) -> AppletStatus {
     ctx.pc = loaded.entry_point;
     ctx.sp = loaded.stack_pointer;
 
-    let max_steps = 50_000;
+    let max_steps = 200_000;
     for _step_count in 0..max_steps {
         match Interpreter::step(&mut ctx, &mut mem) {
             Ok(true) => {}

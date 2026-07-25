@@ -6,6 +6,10 @@ authors.workspace = true
 license.workspace = true
 description = "CLI executable runner for AArch64 binaries under Maarch64"
 
+[[bin]]
+name = "maarch64"
+path = "src/main.rs"
+
 [dependencies]
 clap.workspace = true
 tracing.workspace = true

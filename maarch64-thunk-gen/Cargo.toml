@@ -1,0 +1,11 @@
+[package]
+name = "maarch64-thunk-gen"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+clap = { workspace = true }
+regex = "1.10"
+anyhow = "1.0"

@@ -52,11 +52,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ctx.pc = loaded.entry_point;
     ctx.sp = loaded.stack_pointer;
 
+    let mut thunk_manager = maarch64_thunks::ThunkManager::new();
+    for (addr, name) in &loaded.dynamic_thunks {
+        thunk_manager.resolve_dynamic_symbol(name, *addr);
+    }
+    tracing::info!("[+] Registered {} dynamic symbol thunks with ThunkManager", loaded.dynamic_thunks.len());
+
     tracing::info!("[+] Starting execution from PC = {:#x}", ctx.pc);
     let mut pc_history: std::collections::VecDeque<u64> = std::collections::VecDeque::with_capacity(30);
     let mut inst_count: u64 = 0;
     loop {
         inst_count += 1;
+        if inst_count % 1_000_000 == 0 {
+            tracing::info!("[Progress] {} instructions executed. PC = {:#x}", inst_count, ctx.pc);
+        }
         if inst_count >= 50_000_000 {
             eprintln!("\n[!] Reached instruction limit (50,000,000). Current PC = {:#x}", ctx.pc);
             eprintln!("[!] Last 20 executed PCs:");
@@ -69,6 +78,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         pc_history.push_back(ctx.pc);
         if pc_history.len() > 100 {
             pc_history.pop_front();
+        }
+
+        if let Some(thunk) = thunk_manager.get_thunk_by_address(ctx.pc) {
+            let entry_pc = ctx.pc;
+            let arg0 = ctx.get_x(0);
+            let arg1 = ctx.get_x(1);
+            let thunk_name = loaded.dynamic_thunks.iter().find(|(a, _)| *a == entry_pc).map(|(_, n)| n.as_str()).unwrap_or("unknown");
+            if let Err(e) = thunk(&mut ctx, &mut mem) {
+                eprintln!("[!] Thunk error: {}", e);
+            }
+            tracing::info!("[Thunk: {}] PC={:#x} (arg0={:#x}, arg1={:#x}) -> ret x0={:#x}", thunk_name, entry_pc, arg0, arg1, ctx.get_x(0));
+            if ctx.pc == entry_pc {
+                ctx.pc = ctx.get_x(30);
+            }
+            continue;
         }
 
         match Interpreter::step(&mut ctx, &mut mem) {

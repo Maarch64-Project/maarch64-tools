@@ -89,6 +89,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("[!] Thunk error: {}", e);
             }
             tracing::info!("[Thunk: {}] PC={:#x} (arg0={:#x}, arg1={:#x}) -> ret x0={:#x}", thunk_name, entry_pc, arg0, arg1, ctx.get_x(0));
+            if ctx.exited {
+                break;
+            }
             if ctx.pc == entry_pc {
                 ctx.pc = ctx.get_x(30);
             }

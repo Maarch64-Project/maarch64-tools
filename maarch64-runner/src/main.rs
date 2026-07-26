@@ -1,10 +1,15 @@
 use clap::Parser;
 use maarch64_core::{cpu::CpuContext, interp::Interpreter, loader::ElfLoader, memory::MemoryManager};
 use std::path::PathBuf;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Maarch64 Binary Translator Runner", long_about = None)]
 struct Args {
+    /// Enable verbose execution logging to stderr
+    #[arg(short, long)]
+    verbose: bool,
+
     /// Path to target ARM64 ELF binary
     #[arg(value_name = "BINARY")]
     binary: PathBuf,
@@ -15,27 +20,77 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
     let args = Args::parse();
 
-    println!("[+] Maarch64 Runner loading binary: {:?}", args.binary);
+    let filter = if args.verbose {
+        EnvFilter::new("info")
+    } else {
+        EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new("off"))
+    };
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .init();
+
+    tracing::info!("[+] Maarch64 Runner loading binary: {:?}", args.binary);
     let mut mem = MemoryManager::new();
 
-    let mut target_args: Vec<&str> = vec![args.binary.to_str().unwrap_or("")];
+    let bin_path = args.binary.to_str().unwrap_or("");
+    let bin_name = args.binary.file_name().and_then(|f| f.to_str()).unwrap_or(bin_path);
+    let mut target_args: Vec<&str> = Vec::new();
+    target_args.push(bin_name);
     for a in &args.args {
         target_args.push(a.as_str());
     }
 
     let loaded = ElfLoader::load_file_with_args(&args.binary, &target_args, &mut mem)?;
-    println!("[+] Loaded binary. Entry point: {:#x}", loaded.entry_point);
+    tracing::info!("[+] Loaded binary. Entry point: {:#x}", loaded.entry_point);
 
     let mut ctx = CpuContext::new();
     ctx.pc = loaded.entry_point;
     ctx.sp = loaded.stack_pointer;
 
-    println!("[+] Starting execution from PC = {:#x}\n--- Binary Output ---", ctx.pc);
-    Interpreter::run(&mut ctx, &mut mem)?;
+    tracing::info!("[+] Starting execution from PC = {:#x}", ctx.pc);
+    let mut pc_history: std::collections::VecDeque<u64> = std::collections::VecDeque::with_capacity(30);
+    let mut inst_count: u64 = 0;
+    loop {
+        inst_count += 1;
+        if inst_count >= 50_000_000 {
+            eprintln!("\n[!] Reached instruction limit (50,000,000). Current PC = {:#x}", ctx.pc);
+            eprintln!("[!] Last 20 executed PCs:");
+            for (i, pc) in pc_history.iter().enumerate() {
+                eprintln!("    [{:2}] PC = {:#x}", i, pc);
+            }
+            break;
+        }
 
-    println!("\n--- Execution Finished Cleanly ---");
+        pc_history.push_back(ctx.pc);
+        if pc_history.len() > 100 {
+            pc_history.pop_front();
+        }
+
+        match Interpreter::step(&mut ctx, &mut mem) {
+            Ok(true) => {},
+            Ok(false) => break,
+            Err(e) => {
+                eprintln!("\n[!] Execution Error: {:?}", e);
+                eprintln!("[!] Last 30 executed PCs:");
+                for (i, pc) in pc_history.iter().enumerate() {
+                    eprintln!("    [{:2}] PC = {:#x}", i, pc);
+                }
+                eprintln!("[!] CPU Registers on crash:");
+                for i in 0..31 {
+                    eprint!("X{:02}={:#018x} ", i, ctx.get_x(i as usize));
+                    if (i + 1) % 4 == 0 { eprintln!(); }
+                }
+                eprintln!("\nSP={:#018x} PC={:#018x}", ctx.sp, ctx.pc);
+                return Err(e.into());
+            }
+        }
+    }
+
+    tracing::info!("Execution Finished Cleanly");
     Ok(())
 }

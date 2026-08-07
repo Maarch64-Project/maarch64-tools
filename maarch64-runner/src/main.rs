@@ -14,9 +14,9 @@ struct Args {
     #[arg(value_name = "BINARY")]
     binary: PathBuf,
 
-    /// Disable JIT compilation and force interpreter mode
+    /// Enable high-performance Cranelift JIT compilation
     #[arg(long)]
-    no_jit: bool,
+    jit: bool,
 
     /// Arguments to pass to target binary
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     tracing::info!("[+] Registered {} dynamic symbol thunks with ThunkManager", loaded.dynamic_thunks.len());
 
-    tracing::info!("[+] Starting execution from PC = {:#x} (JIT={})", ctx.pc, !args.no_jit);
+    tracing::info!("[+] Starting execution from PC = {:#x} (JIT={})", ctx.pc, args.jit);
     let mut pc_history: std::collections::VecDeque<u64> = std::collections::VecDeque::with_capacity(30);
     let mut inst_count: u64 = 0;
     let mut jit_engine = maarch64_core::jit::JitEngine::new();
@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let step_res = if !args.no_jit {
+        let step_res = if args.jit {
             jit_engine.execute(&mut ctx, &mut mem)
         } else {
             Interpreter::step(&mut ctx, &mut mem)

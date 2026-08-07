@@ -1,5 +1,5 @@
 use clap::Parser;
-use maarch64_core::{cpu::CpuContext, interp::Interpreter, loader::ElfLoader, memory::MemoryManager};
+use maarch64_core::{cpu::CpuContext, interp::Interpreter, loader::AutoLoader, memory::MemoryManager};
 use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
 
@@ -49,8 +49,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         target_args.push(a.as_str());
     }
 
-    let loaded = ElfLoader::load_file_with_args(&args.binary, &target_args, &mut mem)?;
-    tracing::info!("[+] Loaded binary. Entry point: {:#x}", loaded.entry_point);
+    let loaded = AutoLoader::load_file_with_args(&args.binary, &target_args, &mut mem)?;
+    tracing::info!("[+] Loaded binary (Target OS: {:?}). Entry point: {:#x}", loaded.target_os, loaded.entry_point);
 
     let mut ctx = CpuContext::new();
     ctx.pc = loaded.entry_point;

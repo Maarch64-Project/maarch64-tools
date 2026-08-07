@@ -14,6 +14,10 @@ struct Args {
     #[arg(value_name = "BINARY")]
     binary: PathBuf,
 
+    /// Disable JIT compilation and force interpreter mode
+    #[arg(long)]
+    no_jit: bool,
+
     /// Arguments to pass to target binary
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
@@ -58,13 +62,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     tracing::info!("[+] Registered {} dynamic symbol thunks with ThunkManager", loaded.dynamic_thunks.len());
 
-    tracing::info!("[+] Starting execution from PC = {:#x}", ctx.pc);
+    tracing::info!("[+] Starting execution from PC = {:#x} (JIT={})", ctx.pc, !args.no_jit);
     let mut pc_history: std::collections::VecDeque<u64> = std::collections::VecDeque::with_capacity(30);
     let mut inst_count: u64 = 0;
+    let mut jit_engine = maarch64_core::jit::JitEngine::new();
+
     loop {
         inst_count += 1;
         if inst_count % 1_000_000 == 0 {
-            tracing::info!("[Progress] {} instructions executed. PC = {:#x}", inst_count, ctx.pc);
+            tracing::info!("[Progress] {} instructions executed. PC = {:#x} (JIT hits={}, misses={})", inst_count, ctx.pc, jit_engine.hits, jit_engine.misses);
         }
         if inst_count >= 50_000_000 {
             eprintln!("\n[!] Reached instruction limit (50,000,000). Current PC = {:#x}", ctx.pc);
@@ -98,7 +104,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        match Interpreter::step(&mut ctx, &mut mem) {
+        let step_res = if !args.no_jit {
+            jit_engine.execute(&mut ctx, &mut mem)
+        } else {
+            Interpreter::step(&mut ctx, &mut mem)
+        };
+
+        match step_res {
             Ok(true) => {},
             Ok(false) => break,
             Err(e) => {
